@@ -1,0 +1,5 @@
+
+> openhen@0.1.0 dev
+> tsx src/index.ts
+
+Fallo al iniciar OpenHen: Call to 'getUpdates' failed! (409: Conflict: terminated by other getUpdates request; make sure that only one bot instance is running)

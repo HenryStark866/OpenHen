@@ -1,0 +1,16 @@
+{
+  "rules": {
+    "users": {
+      "$uid": {
+        "messages": {
+          ".indexOn": ["createdAt"]
+        },
+        "notes": {
+          ".indexOn": ["updatedAt"]
+        }
+      }
+    },
+    ".read": false,
+    ".write": false
+  }
+}
