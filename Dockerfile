@@ -7,8 +7,8 @@ RUN apt-get update && apt-get install -y ffmpeg curl unzip && rm -rf /var/lib/ap
 
 # Install gogcli for Google Workspace integration (Linux amd64)
 RUN curl -LO https://github.com/steipete/gogcli/releases/download/v0.12.0/gogcli_0.12.0_linux_amd64.tar.gz && \
-    tar -xzf gogcli_0.12.0_linux_amd64.tar.gz && \
-    mv gogcli /usr/local/bin/gog && \
+    tar -xzf gogcli_0.12.0_linux_amd64.tar.gz gog && \
+    mv gog /usr/local/bin/gog && \
     chmod +x /usr/local/bin/gog && \
     rm gogcli_0.12.0_linux_amd64.tar.gz
 
