@@ -30,6 +30,28 @@ const ALLOWED_GIT_SUBCOMMANDS = new Set(["status", "log", "diff", "branch", "sho
 const BLOCKED_DIRS = new Set(["node_modules", ".git", "dist"]);
 
 const tools: Record<string, ToolHandler> = {
+  notify_user: async (context, args) => {
+    const message = typeof args.message === "string" ? args.message.trim() : "";
+    if (!message) {
+      return { ok: false, error: "Debes enviar un mensaje no vacío." };
+    }
+
+    try {
+      // Store notification in Firebase under a special path for user communication
+      await context.memory.firebaseRef
+        .ref(`users/${context.userId}/notifications`)
+        .push({
+          message,
+          timestamp: Date.now(),
+          from: "agent",
+        });
+
+      return { ok: true, data: { sent: true, message } };
+    } catch (error) {
+      return { ok: false, error: `Error al enviar notificación: ${toErrorMessage(error)}` };
+    }
+  },
+
   get_current_time: async (_context, args) => {
     const timezone =
       typeof args.timezone === "string" && args.timezone.trim().length > 0
@@ -276,6 +298,18 @@ const tools: Record<string, ToolHandler> = {
 export function getToolSchema(): string {
   return JSON.stringify(
     [
+      {
+        name: "notify_user",
+        description: "Envía una notificación directa al usuario a través de Firebase.",
+        input: {
+          type: "object",
+          required: ["message"],
+          properties: {
+            message: { type: "string", description: "Mensaje a enviar al usuario" },
+          },
+          additionalProperties: false,
+        },
+      },
       {
         name: "firebase_master",
         description: "Control total de Firebase Realtime Database (CRUD).",

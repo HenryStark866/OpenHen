@@ -56,12 +56,23 @@ export function createTelegramBot(options: TelegramBotOptions): Bot<Context> {
     try {
       const reply = await options.agent.run(userId, text, images);
 
+      // Send audio response if TTS is enabled
       if (isVoice && options.tts) {
-        const tempPath = path.join(os.tmpdir(), `reply-${Date.now()}.mp3`);
-        await options.tts.synthesize(reply, tempPath);
-        await ctx.replyWithVoice(new InputFile(tempPath));
-        await fs.unlink(tempPath).catch(() => {});
-        logger.info("telegram-bot", "Voice response sent", { userId });
+        try {
+          const tempPath = path.join(os.tmpdir(), `reply-${Date.now()}.mp3`);
+          await options.tts.synthesize(reply, tempPath);
+          await ctx.replyWithVoice(new InputFile(tempPath));
+          await fs.unlink(tempPath).catch(() => {});
+          logger.info("telegram-bot", "Voice response sent", { userId });
+        } catch (ttsError) {
+          logger.error("telegram-bot", "Failed to synthesize voice", {
+            userId,
+            error: ttsError instanceof Error ? ttsError.message : String(ttsError)
+          });
+          // Fallback to text
+          await ctx.reply(reply);
+          logger.info("telegram-bot", "Text response sent (TTS failed)", { userId, responseLength: reply.length });
+        }
       } else {
         await ctx.reply(reply);
         logger.info("telegram-bot", "Text response sent", { userId, responseLength: reply.length });

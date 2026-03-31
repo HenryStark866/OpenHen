@@ -8,6 +8,10 @@ export class MemoryRepository {
     this.db = app.database();
   }
 
+  get firebaseRef(): admin.database.Database {
+    return this.db;
+  }
+
   async saveMessage(params: { 
     userId: number; 
     role: LlmMessage["role"]; 
