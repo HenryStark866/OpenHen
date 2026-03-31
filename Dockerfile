@@ -17,15 +17,18 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | d
     echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" >> /etc/apt/sources.list.d/github-cli.list && \
     apt-get update && apt-get install -y gh && rm -rf /var/lib/apt/lists/*
 
-# Install npm dependencies
+# Install ALL dependencies (including devDeps for TypeScript build)
 COPY package*.json ./
-RUN npm install --omit=dev
+RUN npm install
 
 # Copy source
 COPY . .
 
 # Build TypeScript
 RUN npm run build
+
+# Remove devDependencies to keep image lean
+RUN npm prune --omit=dev
 
 # Health check: verify process is alive
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
