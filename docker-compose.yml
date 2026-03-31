@@ -1,0 +1,23 @@
+version: "3.8"
+
+services:
+  openhen-bot:
+    build: .
+    container_name: openhen-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./service-account.json:/app/service-account.json:ro
+      - ./memory.db:/app/memory.db
+    healthcheck:
+      test: ["CMD", "node", "-e", "process.exit(0)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
