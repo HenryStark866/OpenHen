@@ -1,0 +1,39 @@
+services:
+  - type: web
+    name: openhen
+    env: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_ALLOWED_USER_IDS
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: OPENROUTER_MODEL
+        sync: false
+      - key: FIREBASE_DATABASE_URL
+        sync: false
+      - key: FIREBASE_SERVICE_ACCOUNT
+        sync: false
+      - key: MAX_AGENT_ITERATIONS
+        sync: false
+      - key: OPENHEN_UNSAFE_TOOLS
+        sync: false
+      - key: AUDIO_ENABLED
+        sync: false
+      - key: GROQ_WHISPER_MODEL
+        sync: false
+      - key: ELEVENLABS_API_KEY
+        sync: false
+      - key: ELEVENLABS_VOICE_ID
+        sync: false
+      - key: DB_PATH
+        sync: false
+      - key: GOOGLE_APPLICATION_CREDENTIALS
+        sync: false
+    healthCheckPath: /
+    autoDeploy: true

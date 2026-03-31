@@ -1,17 +1,17 @@
 import admin from "firebase-admin";
+import { readFileSync, existsSync } from "node:fs";
+import { join } from "node:path";
 
 export function initializeFirebase(databaseUrl: string): admin.app.App {
   if (!admin.apps.length) {
     let credential;
     try {
-      const fs = require("node:fs");
-      const path = require("node:path");
-      const localPath = path.join(process.cwd(), "service-account.json");
+      const localPath = join(process.cwd(), "service-account.json");
       const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT;
       
-      if (fs.existsSync(localPath)) {
+      if (existsSync(localPath)) {
         console.log(`[Firebase] Cargando credenciales desde archivo: ${localPath}`);
-        credential = admin.credential.cert(JSON.parse(fs.readFileSync(localPath, "utf8")));
+        credential = admin.credential.cert(JSON.parse(readFileSync(localPath, "utf8")));
       } else if (serviceAccountJson) {
         console.log("[Firebase] Cargando desde ENV VAR FIREBASE_SERVICE_ACCOUNT");
         credential = admin.credential.cert(JSON.parse(serviceAccountJson));

@@ -1,10 +1,10 @@
 import { LlmClient } from "../llm/client.js";
 import { LlmMessage } from "../llm/types.js";
 import { MemoryRepository } from "../memory/repository.js";
-import { executeTool, getToolSchema } from "./tools.js";
+import { executeTool, getToolSchema, ToolResult } from "./tools.js";
 import { PatternAnalyzer, LearningPattern } from "../learning/patternAnalyzer.js";
 import { Logger } from "../utils/logger.js";
-import { PerformanceMonitor, measurePerformance } from "../utils/performance.js";
+import { PerformanceMonitor } from "../utils/performance.js";
 
 type AgentLoopOptions = {
   llm: LlmClient;
@@ -155,7 +155,7 @@ Utiliza estos patrones como guía para mejorar tus respuestas, pero siempre adap
           iteration: i + 1
         });
         
-        let toolResult;
+        let toolResult: ToolResult;
         try {
           toolResult = await executeTool(
             toolName,
