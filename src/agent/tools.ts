@@ -30,6 +30,597 @@ const ALLOWED_GIT_SUBCOMMANDS = new Set(["status", "log", "diff", "branch", "sho
 const BLOCKED_DIRS = new Set(["node_modules", ".git", "dist"]);
 
 const tools: Record<string, ToolHandler> = {
+  web_search: async (_context, args) => {
+    const query = typeof args.query === "string" ? args.query.trim() : "";
+    if (!query) {
+      return { ok: false, error: "Debes enviar una consulta de busqueda." };
+    }
+
+    try {
+      const response = await fetch(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        }
+      });
+
+      if (!response.ok) {
+        return { ok: false, error: `Error en busqueda web: ${response.status}` };
+      }
+
+      const html = await response.text();
+      const results: Array<{ title: string; url: string; snippet: string }> = [];
+
+      const titleRegex = /<a[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>([^<]*)<\/a>/g;
+      const snippetRegex = /<a[^>]*class="result__snippet"[^>]*>([^<]*(?:<[^>]*>[^<]*)*)<\/a>/g;
+
+      let titleMatch;
+      while ((titleMatch = titleRegex.exec(html)) !== null) {
+        const url = titleMatch[1] || "";
+        const title = (titleMatch[2] || "").replace(/<[^>]*>/g, "").trim();
+
+        const snippetMatch = snippetRegex.exec(html);
+        const snippet = snippetMatch && snippetMatch[1] ? snippetMatch[1].replace(/<[^>]*>/g, "").trim() : "";
+
+        if (title && url && url.startsWith("http")) {
+          results.push({ title, url, snippet });
+        }
+
+        if (results.length >= 10) break;
+      }
+
+      return {
+        ok: true,
+        data: {
+          query,
+          results,
+          count: results.length,
+          source: "DuckDuckGo"
+        }
+      };
+    } catch (error) {
+      return { ok: false, error: `Error en busqueda web: ${toErrorMessage(error)}` };
+    }
+  },
+
+  web_fetch: async (_context, args) => {
+    const url = typeof args.url === "string" ? args.url.trim() : "";
+    if (!url.startsWith("https://")) {
+      return { ok: false, error: "Solo se permiten URLs HTTPS." };
+    }
+
+    try {
+      const response = await fetch(url, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        }
+      });
+
+      if (!response.ok) {
+        return { ok: false, error: `Error al obtener URL: ${response.status}` };
+      }
+
+      const html = await response.text();
+      const textContent = html
+        .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
+        .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+        .replace(/<[^>]+>/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 8000);
+
+      return {
+        ok: true,
+        data: {
+          url,
+          content: textContent,
+          length: textContent.length,
+          status: response.status
+        }
+      };
+    } catch (error) {
+      return { ok: false, error: `Error al obtener URL: ${toErrorMessage(error)}` };
+    }
+  },
+
+  code_search: async (_context, args) => {
+    const query = typeof args.query === "string" ? args.query.trim() : "";
+    const language = typeof args.language === "string" ? args.language.trim() : "";
+    if (!query) {
+      return { ok: false, error: "Debes enviar una consulta de busqueda de codigo." };
+    }
+
+    try {
+      const searchQuery = language ? `${query} ${language} example` : query;
+      const response = await fetch(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(searchQuery + " site:github.com OR site:npmjs.com OR site:pypi.org")}`, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        }
+      });
+
+      if (!response.ok) {
+        return { ok: false, error: `Error en busqueda de codigo: ${response.status}` };
+      }
+
+      const html = await response.text();
+      const results: Array<{ title: string; url: string; snippet: string }> = [];
+
+      const titleRegex = /<a[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>([^<]*)<\/a>/g;
+      const snippetRegex = /<a[^>]*class="result__snippet"[^>]*>([^<]*(?:<[^>]*>[^<]*)*)<\/a>/g;
+
+      let titleMatch;
+      while ((titleMatch = titleRegex.exec(html)) !== null) {
+        const url = titleMatch[1] || "";
+        const title = (titleMatch[2] || "").replace(/<[^>]*>/g, "").trim();
+
+        const snippetMatch = snippetRegex.exec(html);
+        const snippet = snippetMatch && snippetMatch[1] ? snippetMatch[1].replace(/<[^>]*>/g, "").trim() : "";
+
+        if (title && url && url.startsWith("http")) {
+          results.push({ title, url, snippet });
+        }
+
+        if (results.length >= 8) break;
+      }
+
+      return {
+        ok: true,
+        data: {
+          query,
+          language: language || "any",
+          results,
+          count: results.length,
+          source: "GitHub/NPM/PyPi via DuckDuckGo"
+        }
+      };
+    } catch (error) {
+      return { ok: false, error: `Error en busqueda de codigo: ${toErrorMessage(error)}` };
+    }
+  },
+
+  github_repo: async (context, args) => {
+    const action = typeof args.action === "string" ? args.action.trim() : "";
+    const repo = typeof args.repo === "string" ? args.repo.trim() : "";
+    const query_text = typeof args.query === "string" ? args.query.trim() : "";
+
+    if (!action) {
+      return { ok: false, error: "Debes especificar una accion: search, info, issues, commits" };
+    }
+
+    try {
+      const headers: Record<string, string> = {
+        "Accept": "application/vnd.github.v3+json",
+        "User-Agent": "OpenHen-Bot"
+      };
+
+      if (action === "search") {
+        if (!query_text) {
+          return { ok: false, error: "Debes enviar una consulta de busqueda." };
+        }
+
+        const response = await fetch(`https://api.github.com/search/repositories?q=${encodeURIComponent(query_text)}&per_page=5`, { headers });
+
+        if (!response.ok) {
+          return { ok: false, error: `Error en busqueda de GitHub: ${response.status}` };
+        }
+
+        const data = await response.json();
+        const repos = data.items.map((repo: any) => ({
+          name: repo.full_name,
+          description: repo.description || "Sin descripcion",
+          stars: repo.stargazers_count,
+          language: repo.language || "N/A",
+          url: repo.html_url
+        }));
+
+        return {
+          ok: true,
+          data: {
+            query: query_text,
+            results: repos,
+            count: repos.length
+          }
+        };
+      }
+
+      if (action === "info") {
+        if (!repo) {
+          return { ok: false, error: "Debes especificar un repositorio (owner/repo)." };
+        }
+
+        const response = await fetch(`https://api.github.com/repos/${repo}`, { headers });
+
+        if (!response.ok) {
+          return { ok: false, error: `Error al obtener info del repo: ${response.status}` };
+        }
+
+        const data = await response.json();
+        return {
+          ok: true,
+          data: {
+            name: data.full_name,
+            description: data.description || "Sin descripcion",
+            stars: data.stargazers_count,
+            forks: data.forks_count,
+            language: data.language || "N/A",
+            topics: data.topics || [],
+            url: data.html_url,
+            created: data.created_at,
+            updated: data.updated_at
+          }
+        };
+      }
+
+      if (action === "issues") {
+        if (!repo) {
+          return { ok: false, error: "Debes especificar un repositorio (owner/repo)." };
+        }
+
+        const response = await fetch(`https://api.github.com/repos/${repo}/issues?per_page=5`, { headers });
+
+        if (!response.ok) {
+          return { ok: false, error: `Error al obtener issues: ${response.status}` };
+        }
+
+        const data = await response.json();
+        const issues = data.map((issue: any) => ({
+          title: issue.title,
+          number: issue.number,
+          state: issue.state,
+          url: issue.html_url,
+          created: issue.created_at
+        }));
+
+        return {
+          ok: true,
+          data: {
+            repo,
+            issues,
+            count: issues.length
+          }
+        };
+      }
+
+      if (action === "commits") {
+        if (!repo) {
+          return { ok: false, error: "Debes especificar un repositorio (owner/repo)." };
+        }
+
+        const response = await fetch(`https://api.github.com/repos/${repo}/commits?per_page=5`, { headers });
+
+        if (!response.ok) {
+          return { ok: false, error: `Error al obtener commits: ${response.status}` };
+        }
+
+        const data = await response.json();
+        const commits = data.map((commit: any) => ({
+          message: commit.commit.message.split("\n")[0],
+          author: commit.commit.author.name,
+          date: commit.commit.author.date,
+          sha: commit.sha.slice(0, 7),
+          url: commit.html_url
+        }));
+
+        return {
+          ok: true,
+          data: {
+            repo,
+            commits,
+            count: commits.length
+          }
+        };
+      }
+
+      return { ok: false, error: `Accion no soportada: ${action}. Usa: search, info, issues, commits` };
+    } catch (error) {
+      return { ok: false, error: `Error en GitHub: ${toErrorMessage(error)}` };
+    }
+  },
+
+  data_analyze: async (_context, args) => {
+    const data_text = typeof args.data === "string" ? args.data.trim() : "";
+    const operation = typeof args.operation === "string" ? args.operation.trim() : "summary";
+
+    if (!data_text) {
+      return { ok: false, error: "Debes enviar datos para analizar." };
+    }
+
+    try {
+      let parsed: any[];
+      try {
+        parsed = JSON.parse(data_text);
+        if (!Array.isArray(parsed)) {
+          parsed = [parsed];
+        }
+      } catch {
+        parsed = data_text.split("\n").filter(line => line.trim()).map(line => {
+          const parts = line.split(",").map(p => p.trim());
+          return parts.reduce((obj: Record<string, string>, val, idx) => {
+            obj[`col_${idx}`] = val;
+            return obj;
+          }, {});
+        });
+      }
+
+      if (parsed.length === 0) {
+        return { ok: false, error: "No se encontraron datos para analizar." };
+      }
+
+      const result: Record<string, any> = {
+        recordCount: parsed.length,
+        columns: Object.keys(parsed[0] || {}),
+        operation
+      };
+
+      if (operation === "summary") {
+        result.sample = parsed.slice(0, 3);
+        result.statistics = {
+          firstRecord: parsed[0],
+          lastRecord: parsed[parsed.length - 1],
+          hasNulls: parsed.some(record => Object.values(record).some(v => v === null || v === undefined))
+        };
+      } else if (operation === "count") {
+        result.count = parsed.length;
+      } else if (operation === "keys") {
+        result.keys = Object.keys(parsed[0] || {});
+        result.sampleValues = parsed.slice(0, 5).map((record: Record<string, any>) =>
+          Object.values(record).slice(0, 3)
+        );
+      }
+
+      return {
+        ok: true,
+        data: result
+      };
+    } catch (error) {
+      return { ok: false, error: `Error al analizar datos: ${toErrorMessage(error)}` };
+    }
+  },
+
+  security_scan: async (context, args) => {
+    const target = typeof args.target === "string" ? args.target.trim() : "";
+    const scanType = typeof args.scanType === "string" ? args.scanType.trim() : "basic";
+
+    if (!target) {
+      return { ok: false, error: "Debes especificar un objetivo para el escaneo." };
+    }
+
+    if (!context.unsafeTools) {
+      return { ok: false, error: "Escaneo de seguridad requiere unsafeTools activado." };
+    }
+
+    try {
+      const results: Record<string, any> = {
+        target,
+        scanType,
+        timestamp: new Date().toISOString(),
+        findings: []
+      };
+
+      if (scanType === "basic" || scanType === "headers") {
+        try {
+          const url = target.startsWith("http") ? target : `https://${target}`;
+          const response = await fetch(url, { method: "HEAD" });
+
+          const headers: Record<string, string> = {};
+          response.headers.forEach((value, key) => {
+            headers[key] = value;
+          });
+
+          results.headers = headers;
+
+          const securityHeaders = [
+            "strict-transport-security",
+            "content-security-policy",
+            "x-content-type-options",
+            "x-frame-options",
+            "x-xss-protection"
+          ];
+
+          const missing = securityHeaders.filter(h => !headers[h]);
+          if (missing.length > 0) {
+            results.findings.push({
+              type: "info",
+              message: `Encabezados de seguridad faltantes: ${missing.join(", ")}`,
+              severity: "low"
+            });
+          }
+
+          results.findings.push({
+            type: "info",
+            message: `Estado HTTP: ${response.status}`,
+            severity: "info"
+          });
+        } catch (err) {
+          results.findings.push({
+            type: "error",
+            message: `No se pudo conectar al objetivo: ${toErrorMessage(err)}`,
+            severity: "high"
+          });
+        }
+      }
+
+      if (scanType === "basic" || scanType === "dependencies") {
+        try {
+          const packageJson = JSON.parse(await fs.readFile("package.json", "utf8"));
+          const deps = {
+            ...packageJson.dependencies,
+            ...packageJson.devDependencies
+          };
+
+          results.dependencies = Object.keys(deps).length;
+          results.dependencyList = Object.entries(deps).slice(0, 20).map(([name, version]) => ({
+            name,
+            version: version as string
+          }));
+
+          results.findings.push({
+            type: "info",
+            message: `${Object.keys(deps).length} dependencias encontradas`,
+            severity: "info"
+          });
+        } catch {
+          results.findings.push({
+            type: "info",
+            message: "No se encontro package.json para analisis de dependencias",
+            severity: "info"
+          });
+        }
+      }
+
+      return {
+        ok: true,
+        data: results
+      };
+    } catch (error) {
+      return { ok: false, error: `Error en escaneo de seguridad: ${toErrorMessage(error)}` };
+    }
+  },
+
+  monitor_system: async (_context, _args) => {
+    try {
+      const os = await import("node:os");
+      const { promises: fs } = await import("node:fs");
+
+      const uptime = os.uptime();
+      const totalMem = os.totalmem();
+      const freeMem = os.freemem();
+      const cpuCount = os.cpus().length;
+      const platform = os.platform();
+      const arch = os.arch();
+
+      const loadAvg = os.loadavg();
+
+      return {
+        ok: true,
+        data: {
+          status: "healthy",
+          uptime: `${Math.floor(uptime / 3600)}h ${Math.floor((uptime % 3600) / 60)}m`,
+          memory: {
+            total: `${(totalMem / 1024 / 1024 / 1024).toFixed(2)} GB`,
+            free: `${(freeMem / 1024 / 1024 / 1024).toFixed(2)} GB`,
+            used: `${((totalMem - freeMem) / 1024 / 1024 / 1024).toFixed(2)} GB`,
+            usagePercent: `${(((totalMem - freeMem) / totalMem) * 100).toFixed(1)}%`
+          },
+          cpu: {
+            cores: cpuCount,
+            loadAverage: loadAvg.map(l => l.toFixed(2))
+          },
+          system: {
+            platform,
+            architecture: arch,
+            nodeVersion: process.version
+          },
+          timestamp: new Date().toISOString()
+        }
+      };
+    } catch (error) {
+      return { ok: false, error: `Error en monitoreo: ${toErrorMessage(error)}` };
+    }
+  },
+
+  task_delegation: async (context, args) => {
+    const task = typeof args.task === "string" ? args.task.trim() : "";
+    const priority = typeof args.priority === "string" ? args.priority.trim() : "medium";
+
+    if (!task) {
+      return { ok: false, error: "Debes describir la tarea a delegar." };
+    }
+
+    try {
+      const taskId = `task_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+      await context.memory.firebaseRef
+        .ref(`users/${context.userId}/tasks/${taskId}`)
+        .set({
+          task,
+          priority,
+          status: "pending",
+          createdAt: Date.now(),
+          createdBy: "agent",
+          userId: context.userId
+        });
+
+      return {
+        ok: true,
+        data: {
+          taskId,
+          task,
+          priority,
+          status: "queued",
+          message: `Tarea '${task.slice(0, 50)}...' agregada a la cola con prioridad ${priority}`
+        }
+      };
+    } catch (error) {
+      return { ok: false, error: `Error al delegar tarea: ${toErrorMessage(error)}` };
+    }
+  },
+
+  deploy_app: async (context, args) => {
+    const platform = typeof args.platform === "string" ? args.platform.trim() : "";
+    const appName = typeof args.appName === "string" ? args.appName.trim() : "";
+
+    if (!platform) {
+      return { ok: false, error: "Debes especificar una plataforma: railway, render, flyio" };
+    }
+
+    if (!context.unsafeTools) {
+      return { ok: false, error: "Despliegue requiere unsafeTools activado." };
+    }
+
+    try {
+      const deploymentInfo: Record<string, any> = {
+        platform,
+        appName: appName || "openhen",
+        status: "ready_to_deploy",
+        timestamp: new Date().toISOString(),
+        instructions: {}
+      };
+
+      if (platform === "railway") {
+        deploymentInfo.instructions = {
+          step1: "Ve a https://railway.app y inicia sesion con GitHub",
+          step2: "Crea un nuevo proyecto y selecciona 'Deploy from GitHub'",
+          step3: "Selecciona el repositorio OpenHen",
+          step4: "Agrega las variables de entorno desde tu archivo .env",
+          step5: "Railway detectara automaticamente el Dockerfile y desplegara",
+          url: "https://railway.app",
+          free_tier: "500 horas/mes gratis"
+        };
+      } else if (platform === "render") {
+        deploymentInfo.instructions = {
+          step1: "Ve a https://render.com y crea una cuenta",
+          step2: "Crea un nuevo 'Web Service' desde GitHub",
+          step3: "Configura las variables de entorno",
+          step4: "Render usara el Dockerfile automaticamente",
+          url: "https://render.com",
+          free_tier: "750 horas/mes gratis"
+        };
+      } else if (platform === "flyio") {
+        deploymentInfo.instructions = {
+          step1: "Instala flyctl: https://fly.io/docs/hands-on/install-flyctl/",
+          step2: "Ejecuta 'fly auth login' y 'fly launch'",
+          step3: "Configura las variables de entorno con 'fly secrets set'",
+          step4: "Despliega con 'fly deploy'",
+          url: "https://fly.io",
+          free_tier: "3 VMs compartidas gratis"
+        };
+      } else {
+        return { ok: false, error: `Plataforma no soportada: ${platform}. Usa: railway, render, flyio` };
+      }
+
+      await context.memory.firebaseRef
+        .ref(`users/${context.userId}/deployments/${platform}`)
+        .set(deploymentInfo);
+
+      return {
+        ok: true,
+        data: deploymentInfo
+      };
+    } catch (error) {
+      return { ok: false, error: `Error en despliegue: ${toErrorMessage(error)}` };
+    }
+  },
+
   notify_user: async (context, args) => {
     const message = typeof args.message === "string" ? args.message.trim() : "";
     if (!message) {
@@ -299,8 +890,120 @@ export function getToolSchema(): string {
   return JSON.stringify(
     [
       {
+        name: "web_search",
+        description: "Busca informacion en tiempo real en internet usando DuckDuckGo.",
+        input: {
+          type: "object",
+          required: ["query"],
+          properties: {
+            query: { type: "string", description: "Consulta de busqueda" },
+          },
+          additionalProperties: false,
+        },
+      },
+      {
+        name: "web_fetch",
+        description: "Obtiene el contenido de una pagina web y extrae el texto.",
+        input: {
+          type: "object",
+          required: ["url"],
+          properties: {
+            url: { type: "string", description: "URL HTTPS de la pagina web" },
+          },
+          additionalProperties: false,
+        },
+      },
+      {
+        name: "code_search",
+        description: "Busca codigo, librerias y documentacion de APIs en GitHub, NPM y PyPi.",
+        input: {
+          type: "object",
+          required: ["query"],
+          properties: {
+            query: { type: "string", description: "Consulta de busqueda de codigo" },
+            language: { type: "string", description: "Lenguaje de programacion (opcional)" },
+          },
+          additionalProperties: false,
+        },
+      },
+      {
+        name: "github_repo",
+        description: "Busca repositorios, obtiene informacion, issues y commits de GitHub.",
+        input: {
+          type: "object",
+          required: ["action"],
+          properties: {
+            action: { type: "string", enum: ["search", "info", "issues", "commits"], description: "Accion a realizar" },
+            repo: { type: "string", description: "Repositorio en formato owner/repo" },
+            query: { type: "string", description: "Consulta de busqueda (para action=search)" },
+          },
+          additionalProperties: false,
+        },
+      },
+      {
+        name: "data_analyze",
+        description: "Analiza datos JSON o CSV y proporciona estadisticas y resumenes.",
+        input: {
+          type: "object",
+          required: ["data"],
+          properties: {
+            data: { type: "string", description: "Datos en formato JSON o CSV" },
+            operation: { type: "string", enum: ["summary", "count", "keys"], description: "Tipo de analisis" },
+          },
+          additionalProperties: false,
+        },
+      },
+      {
+        name: "security_scan",
+        description: "Escanea vulnerabilidades basicas en sitios web y dependencias.",
+        input: {
+          type: "object",
+          required: ["target"],
+          properties: {
+            target: { type: "string", description: "URL o dominio objetivo" },
+            scanType: { type: "string", enum: ["basic", "headers", "dependencies"], description: "Tipo de escaneo" },
+          },
+          additionalProperties: false,
+        },
+      },
+      {
+        name: "monitor_system",
+        description: "Monitorea el estado del sistema: CPU, memoria, uptime.",
+        input: {
+          type: "object",
+          properties: {},
+          additionalProperties: false,
+        },
+      },
+      {
+        name: "task_delegation",
+        description: "Delega tareas complejas al sistema para procesamiento en segundo plano.",
+        input: {
+          type: "object",
+          required: ["task"],
+          properties: {
+            task: { type: "string", description: "Descripcion de la tarea" },
+            priority: { type: "string", enum: ["low", "medium", "high"], description: "Prioridad de la tarea" },
+          },
+          additionalProperties: false,
+        },
+      },
+      {
+        name: "deploy_app",
+        description: "Proporciona instrucciones y configuracion para desplegar aplicaciones en la nube.",
+        input: {
+          type: "object",
+          required: ["platform"],
+          properties: {
+            platform: { type: "string", enum: ["railway", "render", "flyio"], description: "Plataforma de despliegue" },
+            appName: { type: "string", description: "Nombre de la aplicacion" },
+          },
+          additionalProperties: false,
+        },
+      },
+      {
         name: "notify_user",
-        description: "Envía una notificación directa al usuario a través de Firebase.",
+        description: "Envia una notificacion directa al usuario a traves de Firebase.",
         input: {
           type: "object",
           required: ["message"],
