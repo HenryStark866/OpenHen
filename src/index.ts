@@ -1,4 +1,5 @@
 import "dotenv/config";
+import * as http from "http";
 import { AgentLoop } from "./agent/loop.js";
 import { loadConfig } from "./config/env.js";
 import { initializeFirebase } from "./db/firebase.js";
@@ -77,6 +78,16 @@ async function main(): Promise<void> {
   process.once("SIGTERM", () => {
     Logger.getInstance().info("main", "Received SIGTERM, shutting down...");
     bot.stop();
+  });
+
+  // Start HTTP health check server for cloud platforms (Render, Railway, etc.)
+  const port = process.env.PORT || 3000;
+  const server = http.createServer((req, res) => {
+    res.writeHead(200, { "Content-Type": "text/plain" });
+    res.end("OpenHen Bot is alive!");
+  });
+  server.listen(port, () => {
+    Logger.getInstance().info("main", `HTTP Health Check server listening on port ${port}`);
   });
 
   Logger.getInstance().info("main", "🚀 OpenHen bot activo y conectado a Firebase Realtime Database.");
