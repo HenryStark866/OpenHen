@@ -12,6 +12,7 @@ import { MemoryRepository } from "./memory/repository.js";
 import { createTelegramBot } from "./telegram/bot.js";
 import { Logger } from "./utils/logger.js";
 import { PerformanceMonitor } from "./utils/performance.js";
+import { MoneyCoach } from "./coaching/moneyCoach.js";
 
 async function main(): Promise<void> {
   try {
@@ -70,13 +71,24 @@ async function main(): Promise<void> {
     tts,
   });
 
+  // ── MoneyCoach: Motor de Coaching Financiero Adaptativo ──────────────────
+  Logger.getInstance().info("main", "🧠 Iniciando Motor de Coaching Financiero...");
+  const coach = new MoneyCoach({
+    db: memory.firebaseRef,
+    llm,
+    botToken: config.telegramBotToken,
+    userIds: config.allowedUserIds,
+  });
+
   Logger.getInstance().info("main", "Setting up process handlers...");
   process.once("SIGINT", () => {
     Logger.getInstance().info("main", "Received SIGINT, shutting down...");
+    coach.stop();
     bot.stop();
   });
   process.once("SIGTERM", () => {
     Logger.getInstance().info("main", "Received SIGTERM, shutting down...");
+    coach.stop();
     bot.stop();
   });
 
@@ -90,7 +102,10 @@ async function main(): Promise<void> {
     Logger.getInstance().info("main", `HTTP Health Check server listening on port ${port}`);
   });
 
-  Logger.getInstance().info("main", "🚀 OpenHen bot activo y conectado a Firebase Realtime Database.");
+  // Start the coaching loop (non-blocking)
+  coach.start();
+
+  Logger.getInstance().info("main", "🚀 OpenHen bot activo con Coaching Financiero habilitado.");
   await bot.start();
   } catch (error) {
     Logger.getInstance().fatal("main", "Failed to start OpenHen bot", {
