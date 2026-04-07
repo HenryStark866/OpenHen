@@ -55,8 +55,12 @@ export class MemoryRepository {
     return messages
       .sort((a, b) => a.createdAt - b.createdAt)
       .map((m) => {
+        let finalRole = m.role;
+        if (finalRole === "tool") {
+            finalRole = "user" as any;
+        }
         return { 
-          role: m.role, 
+          role: finalRole, 
           content: m.content,
           images: m.images && m.images.length > 0 ? m.images : undefined
         };
